@@ -1,39 +1,29 @@
-# Docker
-# Build and push an image to Azure Container Registry
-# https://docs.microsoft.com/azure/devops/pipelines/languages/docker
-
-trigger:
-- master
-
-resources:
-- repo: self
+pool:
+  vmImage: 'ubuntu-latest'
 
 variables:
-  # Container registry service connection established during pipeline creation
-  dockerRegistryServiceConnection: 'e0a38447-e891-4d2b-9d97-4fc15e4973a7'
-  imageRepository: 'adityosnrostpipelinesgo'
-  containerRegistry: 'modedemosn.azurecr.io'
-  dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
-  tag: '$(Build.BuildId)'
+  GOBIN:  '$(GOPATH)/bin' # Go binaries path
+  GOPATH: '$(system.defaultWorkingDirectory)/gopath' # Go workspace path
+  modulePath: '$(GOPATH)/src/github.com/$(build.repository.name)' # Path to the module's code
 
-  # Agent VM image name
-  vmImageName: 'ubuntu-latest'
+steps:
+- script: |
+    mkdir -p '$(GOBIN)'
+    mkdir -p '$(GOPATH)/pkg'
+    mkdir -p '$(modulePath)'
+    shopt -s extglob
+    shopt -s dotglob
+    mv !(gopath) '$(modulePath)'
+    echo '##vso[task.prependpath]$(GOBIN)'
+  displayName: 'Set up the Go workspace'
 
-stages:
-- stage: Build
-  displayName: Build and push stage
-  jobs:
-  - job: Build
-    displayName: Build
-    pool:
-      vmImage: $(vmImageName)
-    steps:
-    - task: Docker@2
-      displayName: Build and push an image to container registry
-      inputs:
-        command: buildAndPush
-        repository: $(imageRepository)
-        dockerfile: $(dockerfilePath)
-        containerRegistry: $(dockerRegistryServiceConnection)
-        tags: |
-          $(tag)
+- script: |
+    go version
+    go get -v -t -d ./...
+    if [ -f Gopkg.toml ]; then
+        curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
+        dep ensure
+    fi
+    go build -v .
+  workingDirectory: '$(modulePath)'
+  displayName: 'Get dependencies, then build'
